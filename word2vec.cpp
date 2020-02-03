@@ -31,7 +31,8 @@ void ReadWord(char* word, FILE* fp)
    while (!feof(fp))
    {
       ch = fgetc(fp);
-      if ((ch == ' ') || (ch == '\t') || (ch == '\n'))
+      //뺄거 더 없나 봐야댐
+      if ((ch == ' ') || (ch == '\t') || (ch == '\n') || (ch == '-'))
       {
          break;
       }
@@ -83,33 +84,27 @@ void Addword2vocab(char* word)
 {
    //printf("%s  ", word);
    //word가 처음 들어왔을 때 vocab과 vocab_hash에 저장하는 함수
-   unsigned int hash = GetHash(word);
-
-   char length = strlen(word) + 1;
+   unsigned int hash,length = strlen(word) + 1;
 
    if (length > MAX_WORD_LEN) length = MAX_WORD_LEN;
    //메모리가 해제되었는데 접근한 경우 segmentation fault
    vocab[vocab_size].word = (char*)calloc(length, sizeof(char));
 
+   //해당 메모리에 복사
    strcpy(vocab[vocab_size].word, word);
 
-   vocab->freq = 1;
-   if (vocab_size + 3 > vocab_max_size)
+   vocab[vocab_size].freq = 1;
+   vocab_size ++;
+   if (vocab_size + 2 > vocab_max_size)
    {
       vocab_max_size += 1000;
       vocab = (struct vocab_word*)realloc(vocab, vocab_max_size * sizeof(struct vocab_word));
    }
 
-   while (1)
-   {
-      if (vocab_hash[hash] == -1) break;
-      hash = (hash + 1) % vocab_hash_size;
-   }
+   hash = GetHash(word);
+   while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
 
-   vocab_hash[hash] = vocab_size;
-
-   vocab_size++;
-
+   vocab_hash[hash] = vocab_size - 1;
 }
 
 int f(const void* a, const void* b)
@@ -125,15 +120,15 @@ int f(const void* a, const void* b)
 
 void SortVocab()
 {
-   long long i;
-   long long min_freq = 3;
+   int i, size;
+   int min_freq = 3;
    unsigned int hash;
    //Huffman 사용하기 전 Vocab Sort 함수 & freq <min 이하는 제거
    //"UNK" 빼고 나머지 내림차순
    qsort(&vocab[1], vocab_size - 1, sizeof(struct vocab_word), f);
    for (i = 0; i < vocab_hash_size; i++) vocab_hash[i] = -1;
 
-   long long size = vocab_size;
+   size = vocab_size;
    for (i = 0; i < size; i++)
    {
       //printf("%d   ", freq);
@@ -142,10 +137,12 @@ void SortVocab()
          vocab_size--;
          free(vocab[i].word);
       }
+      
       else
       {
          hash = GetHash(vocab[i].word);
          while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+         // i 값이 연속적이게 들어가지 않음 : 문제 생김?
          vocab_hash[hash] = i;
       }
    }
@@ -355,7 +352,7 @@ int main()
 
    for (int i = 0 ; i < 10; i++)
    {
-      printf("%s\n",vocab[i].point);
+      printf("%s\n", vocab[i].point);
    }
    //Huffman();
 
