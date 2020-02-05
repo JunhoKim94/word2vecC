@@ -361,7 +361,7 @@ void Init_Net()
    //Initialize Weight
    for (int i = 0 ; i < vocab_size; i++)
    {
-      for (int j = 0; j < embed_size; i++)
+      for (int j = 0; j < embed_size; j++)
       {
          random = random * (unsigned long long )25214903917 + 11;
          Weight_emb[i][j] = (((random & 0xFFFF) / float(65536)) - 0.5) / embed_size;
@@ -369,7 +369,7 @@ void Init_Net()
    }
    for (int i = 0 ; i < (vocab_size-1); i++)
    {
-      for (int j = 0; j < embed_size; i++)
+      for (int j = 0; j < embed_size; j++)
       {
          random = random * (unsigned long long )25214903917 + 11;
          HS_Weight[i][j] = (((random & 0xFFFF) / float(65536)) - 0.5) / embed_size;
@@ -385,7 +385,7 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
    //1 단어씩 gradient descent 할 거 이므로 1개 벡터만 grad 필요
    float *hidden = (float *)calloc(embed_size, sizeof(float));
    //float *HS_grad = (float *)calloc(embed_size, sizeof(float));
-   float f, g;
+   float f, g, loss;
 
    //Initialize weight
    Init_Net();
@@ -444,9 +444,10 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
                f = 0;
                //feed forward
                for (int layer = 0 ; layer < embed_size ; layer ++) f += Weight_emb[train_word][layer] * HS_Weight[idx][layer];
-               //sigmoid
+               //sigmoid  --> Table로 변환하면 가속화
                f = 1 / (1 + exp(-f));
                //gradient
+               //right ==> 1 left ==> -1
                g = (f - (float)vocab[word].direction_path[j]) * lr;
                //backpropagate
                for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word][layer];
@@ -462,7 +463,7 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             continue;
          }
       }
-      
+
       fclose(fp); 
    }
 }
@@ -483,8 +484,9 @@ int main()
    Make_Large_Corpus(file_path);
 
    for (int i = 0 ; i < 10; i++)
-   {
-      
+   { 
+      printf("%d\n" , i);
+      //printf("%d \n" , vocab[i].path_len);
       for (int j = 0 ; j < vocab[i].path_len; j++) printf("%d ", vocab[i].point[j]);
       printf("\n");
       for (int j = 0 ; j < vocab[i].path_len; j++) printf("%d ", vocab[i].direction_path[j]);
@@ -492,8 +494,7 @@ int main()
       printf("\n");
    }
    
-
-
+   Init_Net();
   /*
   unsigned long long x = 1;
 
