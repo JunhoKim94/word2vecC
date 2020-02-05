@@ -15,13 +15,15 @@ const int vocab_hash_size = 30000000;
 #define MAX_SEN 1000
 #define MAX_WORD_LEN 100
 #define MAX_CODE_LEN 40
+#define EXP_TABLE_SIZE 1000
+#define MAX_EXP 6
 
 int skip = 5, negative_sampling = 5, embed_size = 300;
 long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 
-float **Weight_emb, **HS_Weight, **Nega_emb;
+float **Weight_emb, **HS_Weight, **Nega_emb, *expTable;
 
 void ReadWord(char* word, FILE* fp)
 {
@@ -378,7 +380,7 @@ void Init_Net()
 
 void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
 {
-   long long sentence[MAX_SEN + 1], rand_gen;
+   long long sentence[MAX_SEN + 1], rand_gen, iteration;
    int sen_pos, sen_len = 0, word, target_pos, train_word;
    //1 단어씩 gradient descent 할 거 이므로 1개 벡터만 grad 필요
    float *hidden = (float *)calloc(embed_size, sizeof(float));
@@ -395,9 +397,10 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
       printf("%d file start training\n", path);
       fp = fopen(file_path[path], "r");
 
-
+      iteration = 0;
       while(1)
       {
+         loss = 0;
          //파일 끝에 도달하면 종료 후 다음 파일로
          if(feof(fp)) break;
          
@@ -439,6 +442,7 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             train_word = sentence[target_pos];
             //hidden layer(gradient) 초기화
             for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] = 0;
+
             for (int j = 0 ; j < vocab[word].path_len ; j++)
             {
                int idx = vocab[word].point[j];
@@ -446,7 +450,10 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
                //feed forward
                for (int layer = 0 ; layer < embed_size ; layer ++) f += Weight_emb[train_word][layer] * HS_Weight[idx][layer];
                //sigmoid  --> Table로 변환하면 가속화
-               f = 1 / (1 + exp(-f));
+               //f = (float)1 / (float)(1 + exp(-f));
+               if (f >= MAX_EXP || f <= -MAX_EXP) continue;
+               f = expTable[(int)(f / 2 / MAX_EXP * EXP_TABLE_SIZE + EXP_TABLE_SIZE / 2)];
+               loss += f;
                //gradient
                //(y - t) 이 원래 dloss 인데 여기서는 huffman tree 에서 방향을 바꿔서 - 를 부여
                //(f - idx)로 학습 해보기
@@ -456,14 +463,22 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
                for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] += g * Weight_emb[train_word][layer];
             }
 
-            for (int layer = 0 ; layer < embed_size ; layer++) Weight_emb[train_word][layer] += hidden[layer];
+            for (int layer = 0 ; layer < embed_size ; layer++) 
+            {
+               Weight_emb[train_word][layer] += hidden[layer];
+            }
          }
          sen_pos ++;
+         if (iteration % 3000 == 0) 
+         {
+            printf("\niteration : %ld   |  current loss = %lf \n", iteration, loss/skip/2);
+         }
          if (sen_pos > sen_len)
          {
             sen_len = 0;
             continue;
          }
+         iteration ++;
       }
       fclose(fp); 
    }
@@ -476,6 +491,15 @@ int main()
    int temp;
    char file_path[100][100];
    char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
+
+
+   expTable = (float *)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
+   for (int i = 0 ; i < EXP_TABLE_SIZE ; i++)
+   {
+      //-MAX_EXP ~ MAX_EXP 까지 resolution개
+      expTable[i] = exp((i / float(EXP_TABLE_SIZE) * 2 - 1) * MAX_EXP);
+      expTable[i] = expTable[i] / (expTable[i] + 1);
+   }
 
    GetfileList(file_path, path);
 
@@ -496,8 +520,6 @@ int main()
    }
 
    Train(file_path, 1, 0.0025, 0.2);
-   
-   Init_Net();
   /*
   unsigned long long x = 1;
 
