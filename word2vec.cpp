@@ -23,12 +23,11 @@ int* vocab_hash;
 
 float **Weight_emb, **HS_Weight, **Nega_emb;
 
-
 void ReadWord(char* word, FILE* fp)
 {
-   //open 된 fp 와 buffer 수만큼의 word --> 하나의 word 추출
+   //open 된 fp 와 buffer 수 만큼의 word --> 하나의 word 추출
    //" ", \n, \t 제외
-   // NULL 값도 포함되어 있음 --> Word에
+   // NULL 값도 포함되어 있음 --> Word
    int ch;
    int i = 0;
    while (!feof(fp))
@@ -90,7 +89,6 @@ int ReadWordIndex(FILE* fp)
    if (feof(fp)) return -1;
    return word2idx(word);
 }
-
 
 void Addword2vocab(char* word)
 {
@@ -158,7 +156,7 @@ void SortVocab()
          vocab_hash[hash] = i;
       }
    }
-   //앞에서부터 짤림 --> 내림차순이라 줄어든 vocab_size 개수만큼 짜르면 알아서 cutting
+   // 앞에서부터 짤림 --> 내림차순이라 줄어든 vocab_size 개수만큼 짜르면 알아서 cutting
    vocab = (struct vocab_word*)realloc(vocab, (vocab_size + 1) * sizeof(struct vocab_word));
 
    for (i = 0; i < vocab_size; i++)
@@ -249,6 +247,7 @@ void Huffman()
          //어자피 a 자체가 parent 노드 값
          if (a == vocab_size * 2 - 2) break;
       }
+
       vocab[i].path_len = length;
       vocab[i].point[0] = vocab_size - 2;
 
@@ -364,7 +363,7 @@ void Init_Net()
       for (int j = 0; j < embed_size; i++)
       {
          random = random * (unsigned long long )25214903917 + 11;
-         Weight_emb[i][j] = (((random & 0xFFFF) / float(65536)) - 0.5) / embed_size;
+         Weight_emb[i][j] = (((random & 0xFFFF) / float(65536)) - (float)0.5) / embed_size;
       }
    }
    for (int i = 0 ; i < (vocab_size-1); i++)
@@ -372,11 +371,10 @@ void Init_Net()
       for (int j = 0; j < embed_size; i++)
       {
          random = random * (unsigned long long )25214903917 + 11;
-         HS_Weight[i][j] = (((random & 0xFFFF) / float(65536)) - 0.5) / embed_size;
+         HS_Weight[i][j] = (((random & 0xFFFF) / (float)65536) - (float)0.5) / embed_size;
       }
    }
 }
-
 
 void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
 {
@@ -414,10 +412,11 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
 
             //subsampling (1 - root(1e-5 / freq)) 의 확률로 해당 word 제외 = root(sample/freq_p) 확률로 선출
             if (sub_sampling > 0)
-            {float prob;
-            prob = (float)sqrt((train_words * sub_sampling / vocab[word].freq));
-            rand_gen = rand_gen * (unsigned long long )25214903917 + 11;
-            if (prob < (rand_gen & 0xFFFF) / float(65536)) continue;
+            {
+               float prob;
+               prob = (float)sqrt((train_words * sub_sampling / vocab[word].freq));
+               rand_gen = rand_gen * (unsigned long long )25214903917 + 11;
+               if (prob < (rand_gen & 0xFFFF) / float(65536)) continue;
             }
             sentence[sen_len] = word;
             sen_len ++;
@@ -438,6 +437,8 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             
             //train word  의 인덱스
             train_word = sentence[target_pos];
+            //hidden layer(gradient) 초기화
+            for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] = 0;
             for (int j = 0 ; j < vocab[word].path_len ; j++)
             {
                int idx = vocab[word].point[j];
@@ -447,13 +448,15 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
                //sigmoid
                f = 1 / (1 + exp(-f));
                //gradient
-               g = (f - (float)vocab[word].direction_path[j]) * lr;
+               //(y - t) 이 원래 dloss 인데 여기서는 huffman tree 에서 방향을 바꿔서 - 를 부여
+               //(f - idx)로 학습 해보기
+               g = (1 - f - (float)vocab[word].direction_path[j]) * lr;
                //backpropagate
                for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word][layer];
-               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] -= g * Weight_emb[train_word][layer];
+               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] += g * Weight_emb[train_word][layer];
             }
 
-            for (int layer = 0 ; layer < embed_size ; layer++) Weight_emb[train_word][layer] -= hidden[layer];
+            for (int layer = 0 ; layer < embed_size ; layer++) Weight_emb[train_word][layer] += hidden[layer];
          }
          sen_pos ++;
          if (sen_pos > sen_len)
@@ -462,7 +465,6 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             continue;
          }
       }
-      
       fclose(fp); 
    }
 }
@@ -491,6 +493,8 @@ int main()
 
       printf("\n");
    }
+
+   Train(file_path, 1, 0.0025, 0.2);
    
 
 
