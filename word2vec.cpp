@@ -34,7 +34,7 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 9;
+int num_thread = 1;
 char file_path[100][100];
 
 int epoch = 1;
@@ -619,7 +619,7 @@ int main()
    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path, 9);
+   Make_Large_Corpus(file_path, 3);
 
    //Initialize weight
    Init_Net();
