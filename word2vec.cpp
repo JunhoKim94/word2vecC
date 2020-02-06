@@ -34,14 +34,14 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 9;
+int num_thread = 2;
 char file_path[100][100];
 
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
 
-float **Weight_emb, **HS_Weight, **Nega_emb, *expTable;
+float *Weight_emb, *HS_Weight, *Nega_emb, *expTable;
 
 void ReadWord(char* word, FILE* fp)
 {
@@ -410,26 +410,24 @@ void Init_Net()
    //HS부터
    //Weight 초기화
    
-   Weight_emb = (float **)malloc(sizeof(float *) * vocab_size);
-   HS_Weight = (float **)malloc(sizeof(float *) * (vocab_size-1));
-   for (int i = 0 ; i < vocab_size; i++)  Weight_emb[i] = (float *)malloc(sizeof(float) * embed_size);
-   for (int i = 0 ; i < (vocab_size - 1); i++)  HS_Weight[i] = (float *)malloc(sizeof(float) * embed_size);
-
+   Weight_emb = (float *)_aligned_malloc((long long)vocab_size * embed_size * sizeof(float), 128);
+   HS_Weight = (float *)_aligned_malloc(((long long)vocab_size - 1) * embed_size * sizeof(float), 128);
+   
    //Initialize Weight
    for (int i = 0 ; i < vocab_size; i++)
    {
       for (int j = 0; j < embed_size; j++)
       {
          random = random * (unsigned long long )25214903917 + 11;
-         Weight_emb[i][j] = (((random & 0xFFFF) / float(65536)) - (float)0.5) / embed_size;
+         Weight_emb[i * embed_size + j] = (((random & 0xFFFF) / float(65536)) - (float)0.5) / embed_size;
       }
    }
    for (int i = 0 ; i < (vocab_size-1); i++)
    {
       for (int j = 0; j < embed_size; j++)
       {
-         random = random * (unsigned long long )25214903917 + 11;
-         HS_Weight[i][j] = (((random & 0xFFFF) / (float)65536) - (float)0.5) / embed_size;
+         //random = random * (unsigned long long )25214903917 + 11;
+         HS_Weight[i* embed_size + j] = 0;
       }
    }
 }
@@ -506,7 +504,7 @@ void *Trainthread(int id)
                int idx = vocab[word].point[j];
                f = 0;
                //feed forward
-               for (int layer = 0 ; layer < embed_size ; layer ++) f += Weight_emb[train_word][layer] * HS_Weight[idx][layer];
+               for (int layer = 0 ; layer < embed_size ; layer ++) f += Weight_emb[train_word * embed_size + layer] * HS_Weight[idx * embed_size + layer];
                //sigmoid  --> Table로 변환하면 가속화
                //f = (float)1 / (float)(1 + exp(-f));
                if (f >= MAX_EXP || f <= -MAX_EXP) continue;
@@ -519,13 +517,13 @@ void *Trainthread(int id)
                g = (1 - f - (float)vocab[word].direction_path[j]) * lr;
                //printf("%lf\n",g);
                //backpropagate
-               for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word][layer];
-               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] += g * Weight_emb[train_word][layer];
+               for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word * embed_size + layer];
+               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word * embed_size +layer] += g * Weight_emb[train_word * embed_size + layer];
             }
 
             for (int layer = 0 ; layer < embed_size ; layer++) 
             {
-               Weight_emb[train_word][layer] += hidden[layer];
+               Weight_emb[train_word * embed_size + layer] += hidden[layer];
             }       
          
          }
@@ -565,7 +563,7 @@ unsigned int WINAPI TrainModelThread_win(void *tid){
 void load()
 {
    FILE *fs;
-   float **px;
+   float *px;
 
    if (fopen_s(&fs, "./model_weight.txt", "rb") != 0) 
    {
@@ -573,10 +571,8 @@ void load()
       exit(1);
    }
 
-   px = (float **)malloc(sizeof(float *) * vocab_size);
-   for (int i = 0 ; i < vocab_size; i++)  px[i] = (float *)malloc(sizeof(float) * embed_size);
-
-   for (int layer = 0 ; layer < vocab_size ; layer++ ) fread(*px, sizeof(float), embed_size, fs);
+   px = (float *)_aligned_malloc(sizeof(float) * vocab_size * embed_size, 128);
+   for (int i = 0 ; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer ++) fread(px, sizeof(float), 1, fs);
 
 }
 
@@ -585,11 +581,10 @@ void save()
    FILE *fp;
    fopen_s(&fp, "model_weight.txt","wb");
    Init_Net();
-   cout << Weight_emb[10][10] << endl;
  
    if(fp)
    {
-      for (int layer = 0; layer < vocab_size ; layer ++) fwrite(*Weight_emb,  sizeof(float) ,  embed_size ,fp);
+      for (int layer = 0; layer < vocab_size ; layer ++) for (int i = 0; i < embed_size; i++) fwrite(Weight_emb,  sizeof(float) , 1 ,fp);
       fclose(fp);
    }
    else
@@ -619,7 +614,7 @@ int main()
    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path, 9);
+   Make_Large_Corpus(file_path, 3);
 
    //Initialize weight
    Init_Net();
