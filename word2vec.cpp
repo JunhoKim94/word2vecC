@@ -4,6 +4,16 @@
 #include <conio.h>
 #include <io.h>
 #include <math.h>
+#include <time.h>
+
+#include <process.h>
+#include <windows.h>
+
+#include <iostream>
+
+using namespace std;
+
+
 
 struct vocab_word {
    long long freq;
@@ -18,10 +28,18 @@ const int vocab_hash_size = 30000000;
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 
+int min_freq = 3;
 int skip = 5, negative_sampling = 5, embed_size = 300;
 long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
+clock_t start;
+int num_thread = 9;
+char file_path[100][100];
+
+int epoch = 1;
+float lr = 0.0025;
+float sub_sampling = 0.00001;
 
 float **Weight_emb, **HS_Weight, **Nega_emb, *expTable;
 
@@ -42,6 +60,7 @@ void ReadWord(char* word, FILE* fp)
          if (i > 0)
          {
             if (ch == '\n') ungetc(ch,fp);
+            break;
          }
          */
          if (ch == '\n')
@@ -50,11 +69,11 @@ void ReadWord(char* word, FILE* fp)
             strcpy(word, (char *)"</s>");
             return;
          }
-        break;
+         break;
       }
       word[i] = ch;
       i++;
-      if (i > MAX_WORD_LEN) i--;
+      if (i >= MAX_WORD_LEN - 1) i--;
 
    }
    // 이거 왜 넣는지 이해 x
@@ -117,6 +136,7 @@ void Addword2vocab(char* word)
    while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
 
    vocab_hash[hash] = vocab_size - 1;
+
 }
 
 int f(const void* a, const void* b)
@@ -129,11 +149,33 @@ int f(const void* a, const void* b)
    if (test1 -> freq > test2 -> freq) return -1;
    return 0;
 }
+//to save memory Reduce vocab which have low freq
+void Reducevocab()
+{
+   int a, b =0 ; 
+   unsigned int hash ;
+   for( int a = 0; a < vocab_size ; a++) if (min_freq > vocab[a].freq)
+   {
+      vocab[b].freq = vocab[a].freq;
+      vocab[b].word = vocab[a].word;
+      b++;
+   }else free(vocab[a].word);
+   vocab_size = b;
+   for (a = 0 ; a < vocab_hash_size ; a++) vocab_hash[a] = -1;
+   for (a = 0 ;  a< vocab_size; a++)
+   {
+      hash = GetHash(vocab[a].word);
+      while(vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+      vocab_hash[hash] = a;
+   }
+
+   printf("Reduce Word is Complete  |  Current Vocab_size = %ld \n", vocab_size);
+
+}
 
 void SortVocab()
 {
    int i, size;
-   int min_freq = 3;
    unsigned int hash;
    //Huffman 사용하기 전 Vocab Sort 함수 & freq <min 이하는 제거
    //"UNK" 빼고 나머지 내림차순
@@ -292,11 +334,11 @@ void Make_corpus(FILE* fp)
       if (vocab_size > vocab_hash_size * 0.7) continue;
    
    }
-   printf("train_words ::  %lld", train_words);
+   printf("train_words ::  %lld \n", train_words);
    
 }
 
-void Make_Large_Corpus(char file_path[][100])
+void Make_Large_Corpus(char file_path[][100], int file_num = 99)
 {
    for (long long i = 0; i < vocab_hash_size; i++)
    {
@@ -304,14 +346,17 @@ void Make_Large_Corpus(char file_path[][100])
    }
    Addword2vocab((char*)"</s>");
    vocab_size = 0;
-   for (int path = 0; path < 2; path++)
+   for (int path = 0; path < file_num ; path++)
    {
       FILE* fp;
       printf("%s\n", file_path[path]);
       fp = fopen(file_path[path], "r");
 
       Make_corpus(fp);
-      fclose(fp); 
+      fclose(fp);
+
+      if (vocab_size >= vocab_hash_size *0.7)  Reducevocab();
+
    }
    SortVocab();
    Huffman();
@@ -346,6 +391,16 @@ void GetfileList(char file_path[][100], char *path)
 
 }
 
+void SaveModel()
+{
+   //Only need Emb_Weight
+   Weight_emb;
+
+
+}
+
+
+
 void Init_Net()
 {
    //자료형과 비트연산을 이용한 랜덤 생성: rand 함수 안쓰고
@@ -354,6 +409,7 @@ void Init_Net()
    unsigned long long random = 1;
    //HS부터
    //Weight 초기화
+   
    Weight_emb = (float **)malloc(sizeof(float *) * vocab_size);
    HS_Weight = (float **)malloc(sizeof(float *) * (vocab_size-1));
    for (int i = 0 ; i < vocab_size; i++)  Weight_emb[i] = (float *)malloc(sizeof(float) * embed_size);
@@ -378,31 +434,34 @@ void Init_Net()
    }
 }
 
-void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
+void *Trainthread(int id)
 {
-   long long sentence[MAX_SEN + 1], rand_gen, iteration;
-   int sen_pos, sen_len = 0, word, target_pos, train_word;
+   unsigned long long sentence[MAX_SEN + 1], rand_gen, iteration, train_word_count = 0;
+   int sen_pos = 0, sen_len = 0, word, target_pos, train_word;
    //1 단어씩 gradient descent 할 거 이므로 1개 벡터만 grad 필요
    float *hidden = (float *)calloc(embed_size, sizeof(float));
    //float *HS_grad = (float *)calloc(embed_size, sizeof(float));
    float f, g, loss;
+   int pie;
 
-   //Initialize weight
-   Init_Net();
+   pie = 9 / num_thread;
+
+   clock_t now;
 
    //Train file list
-   for(int i = 0 ; i < epoch ; i ++ ) for (int path = 0; path < 2; path++)
+   start = clock();
+   iteration = 0;
+   for(int i = 0 ; i < epoch ; i ++ ) for (int path = id * pie ; path < (int)id * (pie + 1) ; path++)
    {
       FILE* fp;
       printf("%d file start training\n", path);
       fp = fopen(file_path[path], "r");
 
-      iteration = 0;
-      while(1)
+      
+      while(!feof(fp))
       {
-         loss = 0;
+         iteration ++;
          //파일 끝에 도달하면 종료 후 다음 파일로
-         if(feof(fp)) break;
          
          //Sentence(array) 만들기
          if (sen_len == 0) while(1)
@@ -427,8 +486,6 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             if (sen_len > MAX_SEN) break;
          }
 
-         //word position for training
-         sen_pos = 0;
          //target word
          word = sentence[sen_pos];
          for (int i = 0 ; i < 2 * skip + 1; i++) if (i != skip)
@@ -440,9 +497,10 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             
             //train word  의 인덱스
             train_word = sentence[target_pos];
+            train_word_count ++;
             //hidden layer(gradient) 초기화
             for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] = 0;
-
+            loss = 0;
             for (int j = 0 ; j < vocab[word].path_len ; j++)
             {
                int idx = vocab[word].point[j];
@@ -452,12 +510,14 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
                //sigmoid  --> Table로 변환하면 가속화
                //f = (float)1 / (float)(1 + exp(-f));
                if (f >= MAX_EXP || f <= -MAX_EXP) continue;
-               f = expTable[(int)(f / 2 / MAX_EXP * EXP_TABLE_SIZE + EXP_TABLE_SIZE / 2)];
+               else f = expTable[(int)(f / 2 / MAX_EXP * EXP_TABLE_SIZE + EXP_TABLE_SIZE / 2)];
+               
                loss += f;
                //gradient
                //(y - t) 이 원래 dloss 인데 여기서는 huffman tree 에서 방향을 바꿔서 - 를 부여
                //(f - idx)로 학습 해보기
                g = (1 - f - (float)vocab[word].direction_path[j]) * lr;
+               //printf("%lf\n",g);
                //backpropagate
                for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word][layer];
                for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] += g * Weight_emb[train_word][layer];
@@ -466,21 +526,75 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
             for (int layer = 0 ; layer < embed_size ; layer++) 
             {
                Weight_emb[train_word][layer] += hidden[layer];
-            }
+            }       
+         
          }
+
          sen_pos ++;
-         if (iteration % 3000 == 0) 
+
+         if (iteration % 30000 == 0) 
          {
-            printf("\niteration : %ld   |  current loss = %lf \n", iteration, loss/skip/2);
+            now = clock();
+            cout << "iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
+            cout << "expect time for end =  " << (float)(now - start + 1) * train_words / iteration / 1000 / 3600 / num_thread  << "|  total words =   "<< train_words / num_thread << endl;
+            //long temp = ftell(fp);
+            //cout << temp << endl;
+            //printf("\niteration : %ld   |  current loss = %f | time spending = %f  | Real trained words = %lld \n", iteration, loss, (float)( now - start + 1), train_word_count);
          }
-         if (sen_pos > sen_len)
+         if (sen_pos >= sen_len)
          {
             sen_len = 0;
+            //word position for training
+            sen_pos = 0;
             continue;
          }
-         iteration ++;
+
       }
       fclose(fp); 
+   }
+   _endthreadex(0);
+}
+
+unsigned int WINAPI TrainModelThread_win(void *tid){
+   int * pNum = (int *)tid;
+	Trainthread(*pNum);
+	return 0;
+}
+
+
+void load()
+{
+   FILE *fs;
+   float **px;
+
+   if (fopen_s(&fs, "./model_weight.txt", "rb") != 0) 
+   {
+      printf("Cannot Open file \n");
+      exit(1);
+   }
+
+   px = (float **)malloc(sizeof(float *) * vocab_size);
+   for (int i = 0 ; i < vocab_size; i++)  px[i] = (float *)malloc(sizeof(float) * embed_size);
+
+   for (int layer = 0 ; layer < vocab_size ; layer++ ) fread(*px, sizeof(float), embed_size, fs);
+
+}
+
+void save()
+{
+   FILE *fp;
+   fopen_s(&fp, "model_weight.txt","wb");
+   Init_Net();
+   cout << Weight_emb[10][10] << endl;
+ 
+   if(fp)
+   {
+      for (int layer = 0; layer < vocab_size ; layer ++) fwrite(*Weight_emb,  sizeof(float) ,  embed_size ,fp);
+      fclose(fp);
+   }
+   else
+   {
+      printf("데이터 저장 실패\n");
    }
 }
 
@@ -489,9 +603,8 @@ void Train(char file_path[][100], int epoch, float lr, float sub_sampling)
 int main()
 {
    int temp;
-   char file_path[100][100];
    char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
-
+   
 
    expTable = (float *)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
    for (int i = 0 ; i < EXP_TABLE_SIZE ; i++)
@@ -506,28 +619,23 @@ int main()
    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path);
+   Make_Large_Corpus(file_path, 9);
 
-   for (int i = 0 ; i < 10; i++)
-   { 
-      printf("%d\n" , i);
-      //printf("%d \n" , vocab[i].path_len);
-      for (int j = 0 ; j < vocab[i].path_len; j++) printf("%d ", vocab[i].point[j]);
-      printf("\n");
-      for (int j = 0 ; j < vocab[i].path_len; j++) printf("%d ", vocab[i].direction_path[j]);
+   //Initialize weight
+   Init_Net();
 
-      printf("\n");
-   }
+   HANDLE *pt = (HANDLE *)malloc(num_thread * sizeof(HANDLE));
+	for (int i = 0; i < num_thread; i++){
+		pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &i, 0, NULL);
+	}
+	WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
+	for (int i = 0; i < num_thread; i++){
+		CloseHandle(pt[i]);
+	}
+	free(pt);
 
-   Train(file_path, 1, 0.0025, 0.2);
-  /*
-  unsigned long long x = 1;
 
-   for (int i = 0 ; i < 50; i++) 
-   { x = x * (unsigned long long)25214903917 + 11;
-   printf("%lld\n", x);
-   printf("%lld\n", x&0xFFF);
-   */
+   //Train(file_path, epoch, lr, sub_sampling);
+   save();
+
 }
-
-
