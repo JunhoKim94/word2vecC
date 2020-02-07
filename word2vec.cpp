@@ -36,7 +36,7 @@ int* vocab_hash;
 clock_t start;
 int num_thread = 1;
 char file_path[100][100];
-
+int num = 99;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -424,7 +424,8 @@ void Init_Net()
          Weight_emb[i][j] = (((random & 0xFFFF) / float(65536)) - (float)0.5) / embed_size;
       }
    }
-   for (int i = 0 ; i < (vocab_size-1); i++)
+   if (HS_Weight == NULL) {printf("Momory alloc fail"); exit(1);}
+   for (int i = 0 ; i < (vocab_size); i++)
    {
       for (int j = 0; j < embed_size; j++)
       {
@@ -584,9 +585,6 @@ void save()
 {
    FILE *fp;
    fopen_s(&fp, "model_weight.txt","wb");
-   Init_Net();
-   cout << Weight_emb[10][10] << endl;
- 
    if(fp)
    {
       for (int layer = 0; layer < vocab_size ; layer ++) fwrite(*Weight_emb,  sizeof(float) ,  embed_size ,fp);
@@ -598,7 +596,13 @@ void save()
    }
 }
 
+void save_vocab()
+{
+   FILE *fp;
+   fopen_s(&fp, "model_vocab.txt", "wb");
 
+
+}
 
 int main()
 {
