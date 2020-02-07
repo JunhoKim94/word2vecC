@@ -34,7 +34,7 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 1;
+int num_thread = 3;
 char file_path[100][100];
 int num = 99;
 int epoch = 1;
@@ -338,7 +338,7 @@ void Make_corpus(FILE* fp)
    
 }
 
-void Make_Large_Corpus(char file_path[][100], int file_num = 99)
+void Make_Large_Corpus(char file_path[][100])
 {
    for (long long i = 0; i < vocab_hash_size; i++)
    {
@@ -346,7 +346,7 @@ void Make_Large_Corpus(char file_path[][100], int file_num = 99)
    }
    Addword2vocab((char*)"</s>");
    vocab_size = 0;
-   for (int path = 0; path < file_num ; path++)
+   for (int path = 0; path < num ; path++)
    {
       FILE* fp;
       printf("%s\n", file_path[path]);
@@ -425,7 +425,7 @@ void Init_Net()
       }
    }
    if (HS_Weight == NULL) {printf("Momory alloc fail"); exit(1);}
-   for (int i = 0 ; i < (vocab_size); i++)
+   for (int i = 0 ; i < (vocab_size - 1); i++)
    {
       for (int j = 0; j < embed_size; j++)
       {
@@ -437,7 +437,7 @@ void Init_Net()
 
 void *Trainthread(int id)
 {
-   unsigned long long sentence[MAX_SEN + 1], rand_gen, iteration, train_word_count = 0;
+   unsigned long long sentence[MAX_SEN + 1], rand_gen = 1, iteration, train_word_count = 0;
    int sen_pos = 0, sen_len = 0, word, target_pos, train_word;
    //1 단어씩 gradient descent 할 거 이므로 1개 벡터만 grad 필요
    float *hidden = (float *)calloc(embed_size, sizeof(float));
@@ -445,14 +445,14 @@ void *Trainthread(int id)
    float f, g, loss;
    int pie;
 
-   pie = 9 / num_thread;
+   pie = num / num_thread;
 
    clock_t now;
 
    //Train file list
    start = clock();
    iteration = 0;
-   for(int i = 0 ; i < epoch ; i ++ ) for (int path = id * pie ; path < (int)id * (pie + 1) ; path++)
+   for(int i = 0 ; i < epoch ; i ++ ) for (int path = (id - 1) * pie ; path < (id - 1) * (pie + 1) ; path++)
    {
       FILE* fp;
       printf("%d file start training\n", path);
@@ -623,7 +623,7 @@ int main()
    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path, 3);
+   Make_Large_Corpus(file_path);
 
    //Initialize weight
    Init_Net();
@@ -642,4 +642,5 @@ int main()
    //Train(file_path, epoch, lr, sub_sampling);
    save();
 
+   return 0;
 }
