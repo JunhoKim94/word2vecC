@@ -34,9 +34,9 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 3;
+int num_thread = 1;
 char file_path[100][100];
-int num = 99;
+int num = 2;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -410,9 +410,17 @@ void Init_Net()
    //HS부터
    //Weight 초기화
    
+<<<<<<< Updated upstream
    Weight_emb = (float *)_aligned_malloc((long long)vocab_size * embed_size * sizeof(float), 128);
    HS_Weight = (float *)_aligned_malloc(((long long)vocab_size - 1) * embed_size * sizeof(float), 128);
    
+=======
+   Weight_emb = (float **)malloc(sizeof(float *) * vocab_size);
+   HS_Weight = (float **)malloc(sizeof(float *) * vocab_size);
+   for (int i = 0 ; i < vocab_size; i++)  Weight_emb[i] = (float *)malloc(sizeof(float) * embed_size);
+   for (int i = 0 ; i < vocab_size ; i++)  HS_Weight[i] = (float *)malloc(sizeof(float) * embed_size);
+
+>>>>>>> Stashed changes
    //Initialize Weight
    for (int i = 0 ; i < vocab_size; i++)
    {
@@ -422,7 +430,12 @@ void Init_Net()
          Weight_emb[i * embed_size + j] = (((random & 0xFFFF) / float(65536)) - (float)0.5) / embed_size;
       }
    }
+<<<<<<< Updated upstream
    for (int i = 0 ; i < (vocab_size-1); i++)
+=======
+   if (HS_Weight == NULL) {printf("Memory alloc fail"); exit(1);}
+   for (int i = 0 ; i < vocab_size; i++)
+>>>>>>> Stashed changes
    {
       for (int j = 0; j < embed_size; j++)
       {
@@ -454,7 +467,11 @@ void *Trainthread(int id)
    //Train file list
    start = clock();
    iteration = 0;
+<<<<<<< Updated upstream
    for(int i = 0 ; i < epoch ; i ++ ) for (int path = id * pie ; path < (int)id * (pie + 1) ; path++)
+=======
+   for(int i = 0 ; i < epoch ; i ++ ) for (int path = (id - 1) * pie ; path < id  * pie ; path++)
+>>>>>>> Stashed changes
    {
       FILE* fp;
       printf("%d file start training\n", path);
@@ -538,7 +555,11 @@ void *Trainthread(int id)
          if (iteration % 30000 == 0) 
          {
             now = clock();
+<<<<<<< Updated upstream
             cout << "Thread idx  =  "<<  id   <<"|  iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
+=======
+            cout << "thread id  =  " << id  << "|  iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
+>>>>>>> Stashed changes
             cout << "expect time for end =  " << (float)(now - start + 1) * train_words / iteration / 1000 / 3600 / num_thread  << "|  total words =   "<< train_words / num_thread << endl;
             //long temp = ftell(fp);
             //cout << temp << endl;
