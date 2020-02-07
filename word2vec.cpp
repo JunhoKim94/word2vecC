@@ -467,6 +467,7 @@ void *Trainthread(int id)
          //Sentence(array) 만들기
          if (sen_len == 0) while(1)
          {
+            if (feof(fp)) break;
             //이미 해쉬 Table 써서 찾아온 index
             word = ReadWordIndex(fp);
             if (word == -1) continue;
