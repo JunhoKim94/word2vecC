@@ -34,9 +34,9 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 1;
+int num_thread = 3;
 char file_path[100][100];
-int num = 2;
+int num = 99;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -392,6 +392,7 @@ void GetfileList(char file_path[][100], char* path)
 
 }
 
+
 void Init_Net()
 {
     //자료형과 비트연산을 이용한 랜덤 생성: rand 함수 안쓰고
@@ -432,7 +433,7 @@ void* Trainthread(int id)
     //float *HS_grad = (float *)calloc(embed_size, sizeof(float));
     float f, g, loss;
     int pie;
-
+    cout << id  << endl;
     pie = num / num_thread;
     if (pie % num_thread != 0)
     {
@@ -467,13 +468,15 @@ void* Trainthread(int id)
             //Sentence(array) 만들기
             if (sen_len == 0) while (1)
             {
+                train_word_count++;
+                if (feof(fp)) break;
                 //이미 해쉬 Table 써서 찾아온 index
                 word = ReadWordIndex(fp);
                 if (word == -1) continue;
                 //문장이 끝나면 break
                 if (word == 0) break;
                 //파일이 끝나도 break
-                if (feof(fp)) break;
+                
 
                 //subsampling (1 - root(1e-5 / freq)) 의 확률로 해당 word 제외 = root(sample/freq_p) 확률로 선출
                 if (sub_sampling > 0)
@@ -500,7 +503,7 @@ void* Trainthread(int id)
 
                 //train word  의 인덱스
                 train_word = sentence[target_pos];
-                train_word_count++;
+                
                 //hidden layer(gradient) 초기화
                 for (int layer = 0; layer < embed_size; layer++) hidden[layer] = 0;
                 loss = 0;
@@ -535,14 +538,16 @@ void* Trainthread(int id)
 
             sen_pos++;
 
-            if (iteration % 30000 == 0)
+            if (iteration % 300000 == 0)
             {
                 
                 now = clock();
-                cout << "thread id  =  " << id << "|  iteration  =  " << iteration << "|  current loss  =  " << loss << "|  time spending  =  " << (float)(now - start + 1) / 1000 << "|  Real trained word =  " << train_word_count << endl;
-                cout << "expect time for end =  " << (float)(now - start + 1) * train_words / iteration / 1000 / 3600 / num_thread << "|  total words =   " << train_words / num_thread << endl;
-                long temp = ftell(fp);
-                cout << temp << endl;
+                float total_time = (float)(now - start + 1) * train_words / train_word_count / (float)CLOCKS_PER_SEC / 3600 / num_thread, cur_time = (float)(now - start + 1) / 1000;
+                cout << "thread id  =  " << id << "|  iteration  =  " << iteration << "|  current loss  =  " << loss << "|  time spending  =  " << cur_time << "|  Real trained word =  " << train_word_count << endl;
+                cout << "expect time for end =  " << total_time << "|  total words =   " << train_words / num_thread << "|   Time Left  =  " << total_time - cur_time / (float)3600 << endl;
+
+                //long temp = ftell(fp);
+                //cout << temp << endl;
                 //printf("\niteration : %ld   |  current loss = %f | time spending = %f  | Real trained words = %lld \n", iteration, loss, (float)( now - start + 1), train_word_count);
             }
             if (sen_pos >= sen_len)
@@ -561,8 +566,8 @@ void* Trainthread(int id)
 }
 
 unsigned int WINAPI TrainModelThread_win(void* tid) {
-    int* pNum = (int*)tid;
-    Trainthread(*pNum);
+    int* p = (int*)tid;
+    Trainthread(*p);
     return 0;
 }
 
@@ -578,22 +583,33 @@ void load()
         exit(1);
     }
 
-    px = (float*)_aligned_malloc(sizeof(float) * vocab_size * embed_size, 128);
-    for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fread(px, sizeof(float), 1, fs);
-
+    //px = (float*)_aligned_malloc(sizeof(float) * vocab_size * embed_size, 128);
+    fread(&vocab_size, sizeof(long long), 1, fs);
+    for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fread(Weight_emb, sizeof(float), 1, fs);
+    for (int i = 0; i < vocab_size; i++) fread(vocab, sizeof(struct vocab_word), 1, fs);
+    for (int i = 0; i < vocab_hash_size; i++) fread(vocab_hash, sizeof(int), 1, fs);
+    fclose(fs);
 }
 
-void save()
+void save_all()
 {
     FILE* fp;
-    fopen_s(&fp, "model_weight.txt", "wb");
-    Init_Net();
-
+    fopen_s(&fp, "weight_voc_hash.txt", "wb");
+    
     if (fp)
     {
-        for (int layer = 0; layer < vocab_size; layer++) for (int i = 0; i < embed_size; i++) fwrite(Weight_emb, sizeof(float), 1, fp);
+        
+        //fwrite(&vocab_size, sizeof(long long), 1, fp);
+        
+        for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fwrite(Weight_emb, sizeof(float), 1, fp);
+        
+        //for (int i = 0; i < vocab_size; i++) fwrite(vocab, sizeof(struct vocab_word), 1, fp);
+
+        //for (int i = 0; i < vocab_hash_size; i++) fwrite(vocab_hash, sizeof(int), 1, fp);
         fclose(fp);
+        
     }
+
     else
     {
         printf("데이터 저장 실패\n");
@@ -625,18 +641,22 @@ int main()
     //Initialize weight
     Init_Net();
 
+    int* cap;
+    cap = (int*)malloc(sizeof(int) * num_thread);
+    for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
+
     HANDLE* pt = (HANDLE*)malloc(num_thread * sizeof(HANDLE));
     for (int i = 0; i < num_thread; i++) {
-        pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &i, 0, NULL);
+        pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &cap[i], 0, NULL);
     }
     WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
     for (int i = 0; i < num_thread; i++) {
         CloseHandle(pt[i]);
     }
     free(pt);
-
+    free(cap);
 
     //Train(file_path, epoch, lr, sub_sampling);
-    save();
+    save_all();
 
 }
