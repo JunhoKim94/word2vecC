@@ -391,15 +391,6 @@ void GetfileList(char file_path[][100], char *path)
 
 }
 
-void SaveModel()
-{
-   //Only need Emb_Weight
-   Weight_emb;
-
-
-}
-
-
 
 void Init_Net()
 {
@@ -468,6 +459,7 @@ void *Trainthread(int id)
          if (sen_len == 0) while(1)
          {
             if (feof(fp)) break;
+            train_word_count ++;
             //이미 해쉬 Table 써서 찾아온 index
             word = ReadWordIndex(fp);
             if (word == -1) continue;
@@ -493,13 +485,12 @@ void *Trainthread(int id)
          for (int i = 0 ; i < 2 * skip + 1; i++) if (i != skip)
          {
             target_pos = sen_pos - skip + i;
-
             if (target_pos < 0) continue;
             if (target_pos >= sen_len) continue; 
             
             //train word  의 인덱스
             train_word = sentence[target_pos];
-            train_word_count ++;
+            
             //hidden layer(gradient) 초기화
             for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] = 0;
             loss = 0;
@@ -534,14 +525,17 @@ void *Trainthread(int id)
 
          sen_pos ++;
 
-         if (iteration % 30000 == 0) 
+         if (iteration % 300000 == 0)
          {
-            now = clock();
-            cout << "iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
-            cout << "expect time for end =  " << (float)(now - start + 1) * train_words / iteration / 1000 / 3600 / num_thread  << "|  total words =   "<< train_words / num_thread << endl;
-            //long temp = ftell(fp);
-            //cout << temp << endl;
-            //printf("\niteration : %ld   |  current loss = %f | time spending = %f  | Real trained words = %lld \n", iteration, loss, (float)( now - start + 1), train_word_count);
+               
+               now = clock();
+               float total_time = (float)(now - start + 1) * train_words / train_word_count / (float)CLOCKS_PER_SEC / 3600 / num_thread, cur_time = (float)(now - start + 1) / 1000;
+               cout << "thread id  =  " << id << "|  iteration  =  " << iteration << "|  current loss  =  " << loss << "|  time spending  =  " << cur_time << "|  Real trained word =  " << train_word_count << endl;
+               cout << "expect time for end =  " << total_time << "|  total words =   " << train_words / num_thread << "|   Time Left  =  " << total_time - cur_time / (float)3600 << endl;
+
+               //long temp = ftell(fp);
+               //cout << temp << endl;
+               //printf("\niteration : %ld   |  current loss = %f | time spending = %f  | Real trained words = %lld \n", iteration, loss, (float)( now - start + 1), train_word_count);
          }
          if (sen_pos >= sen_len)
          {
@@ -557,11 +551,12 @@ void *Trainthread(int id)
    _endthreadex(0);
 }
 
-unsigned int WINAPI TrainModelThread_win(void *tid){
-   int * pNum = (int *)tid;
-	Trainthread(*pNum);
-	return 0;
+unsigned int WINAPI TrainModelThread_win(void* tid) {
+    int* p = (int*)tid;
+    Trainthread(*p);
+    return 0;
 }
+
 
 
 void load()
@@ -607,41 +602,43 @@ void save_vocab()
 
 int main()
 {
-   int temp;
-   char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
-   
+    int temp;
+    char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
 
-   expTable = (float *)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
-   for (int i = 0 ; i < EXP_TABLE_SIZE ; i++)
-   {
-      //-MAX_EXP ~ MAX_EXP 까지 resolution개
-      expTable[i] = exp((i / float(EXP_TABLE_SIZE) * 2 - 1) * MAX_EXP);
-      expTable[i] = expTable[i] / (expTable[i] + 1);
-   }
+    expTable = (float*)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
+    for (int i = 0; i < EXP_TABLE_SIZE; i++)
+    {
+        //-MAX_EXP ~ MAX_EXP 까지 resolution개
+        expTable[i] = exp((i / float(EXP_TABLE_SIZE) * 2 - 1) * MAX_EXP);
+        expTable[i] = expTable[i] / (expTable[i] + 1);
+    }
 
-   GetfileList(file_path, path);
+    GetfileList(file_path, path);
 
-   vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
-   vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
+    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
+    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path);
+    Make_Large_Corpus(file_path);
 
-   //Initialize weight
-   Init_Net();
+    //Initialize weight
+    Init_Net();
 
-   HANDLE *pt = (HANDLE *)malloc(num_thread * sizeof(HANDLE));
-	for (int i = 0; i < num_thread; i++){
-		pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &i, 0, NULL);
-	}
-	WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
-	for (int i = 0; i < num_thread; i++){
-		CloseHandle(pt[i]);
-	}
-	free(pt);
+    int* cap;
+    cap = (int*)malloc(sizeof(int) * num_thread);
+    for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
 
+    HANDLE* pt = (HANDLE*)malloc(num_thread * sizeof(HANDLE));
+    for (int i = 0; i < num_thread; i++) {
+        pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &cap[i], 0, NULL);
+    }
+    WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
+    for (int i = 0; i < num_thread; i++) {
+        CloseHandle(pt[i]);
+    }
+    free(pt);
+    free(cap);
 
-   //Train(file_path, epoch, lr, sub_sampling);
-   save();
+    //Train(file_path, epoch, lr, sub_sampling);
+    save();
 
-   return 0;
 }
