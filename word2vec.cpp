@@ -34,9 +34,9 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 2;
+int num_thread = 3;
 char file_path[100][100];
-
+int num = 99;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -338,7 +338,7 @@ void Make_corpus(FILE* fp)
    
 }
 
-void Make_Large_Corpus(char file_path[][100], int file_num = 99)
+void Make_Large_Corpus(char file_path[][100])
 {
    for (long long i = 0; i < vocab_hash_size; i++)
    {
@@ -346,7 +346,7 @@ void Make_Large_Corpus(char file_path[][100], int file_num = 99)
    }
    Addword2vocab((char*)"</s>");
    vocab_size = 0;
-   for (int path = 0; path < file_num ; path++)
+   for (int path = 0; path < num ; path++)
    {
       FILE* fp;
       printf("%s\n", file_path[path]);
@@ -442,7 +442,12 @@ void *Trainthread(int id)
    float f, g, loss;
    int pie;
 
-   pie = 9 / num_thread;
+   pie = num / num_thread;
+   if (pie % num_thread != 0) 
+   {
+      cout << "Please check thread number" << endl;
+      exit(1);
+   }
 
    clock_t now;
 
@@ -533,7 +538,7 @@ void *Trainthread(int id)
          if (iteration % 30000 == 0) 
          {
             now = clock();
-            cout << "iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
+            cout << "Thread idx  =  "<<  id   <<"|  iteration  =  " << iteration << "|  current loss  =  "<< loss << "|  time spending  =  " << (float)(now - start + 1)/1000 << "|  Real trained word =  " << train_word_count << endl;
             cout << "expect time for end =  " << (float)(now - start + 1) * train_words / iteration / 1000 / 3600 / num_thread  << "|  total words =   "<< train_words / num_thread << endl;
             //long temp = ftell(fp);
             //cout << temp << endl;
@@ -599,7 +604,6 @@ int main()
 {
    int temp;
    char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
-   
 
    expTable = (float *)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
    for (int i = 0 ; i < EXP_TABLE_SIZE ; i++)
@@ -614,7 +618,7 @@ int main()
    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
 
-   Make_Large_Corpus(file_path, 3);
+   Make_Large_Corpus(file_path);
 
    //Initialize weight
    Init_Net();
