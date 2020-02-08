@@ -3,3 +3,4 @@ __pycache__/*
 .ipynb_chechpoints/*
 1-billion-word/*
 bestmodel.pickle
+weight_voc_hash.txt

@@ -34,9 +34,9 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 3;
+int num_thread = 1;
 char file_path[100][100];
-int num = 99;
+int num = 1;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -538,7 +538,7 @@ void* Trainthread(int id)
 
             sen_pos++;
 
-            if (iteration % 300000 == 0)
+            if (iteration % 30000 == 0)
             {
                 
                 now = clock();
@@ -577,7 +577,7 @@ void load()
     FILE* fs;
     float* px;
 
-    if (fopen_s(&fs, "./model_weight.txt", "rb") != 0)
+    if (fopen_s(&fs, "./model_voc_hash.txt", "rb") != 0)
     {
         printf("Cannot Open file \n");
         exit(1);
@@ -585,10 +585,111 @@ void load()
 
     //px = (float*)_aligned_malloc(sizeof(float) * vocab_size * embed_size, 128);
     fread(&vocab_size, sizeof(long long), 1, fs);
-    for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fread(Weight_emb, sizeof(float), 1, fs);
-    for (int i = 0; i < vocab_size; i++) fread(vocab, sizeof(struct vocab_word), 1, fs);
-    for (int i = 0; i < vocab_hash_size; i++) fread(vocab_hash, sizeof(int), 1, fs);
+    //fread(&vocab_hash_size , sizeof(int) , 1, fs);
+    //for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) 
+    fread(Weight_emb, sizeof(float) * vocab_size * embed_size, 1, fs);
+    fread(vocab, sizeof(struct vocab_word) * vocab_size, 1, fs);
+    fread(vocab_hash, sizeof(int) * vocab_hash_size, 1, fs);
     fclose(fs);
+}
+
+int val(const void* a, const void* b)
+{
+    // -> 포인터 . value
+    float * test1 = (float *)a;
+    float * test2 = (float *)b;
+
+    if (test1 < test2) return 1;
+    if (test1 > test2) return -1;
+    return 0;
+}
+
+
+void cos_similarity(float *word_vec, float *candidate, int top = 5)
+{
+   float *similarity;
+   int i, layer;
+   float norm;
+
+   for (layer= 0; layer < embed_size; layer ++) norm += word_vec[layer] * word_vec[layer];
+   norm = sqrt(norm);
+   for(layer = 0; layer < embed_size; layer ++) word_vec[layer] /= norm;
+
+
+   similarity = (float *)calloc(sizeof(float), vocab_size);
+   for (i = 0; i < vocab_size ; i++) for (layer = 0; layer < embed_size ; layer ++); similarity[i] += Weight_emb[i * embed_size + layer] * word_vec[layer];
+   qsort(similarity, vocab_size ,sizeof(float), val);
+
+   for (i = 0; i < top ; i++) candidate[i] = similarity[i];
+
+}
+
+void Word_score(int *score)
+{
+   int lines, sen_len, word, layer, i, sort = 0;
+   int sentence[4];
+   float *word_vec;
+   float *norm;
+   float *candidate;
+   int top = 5;
+
+   score[0] = 0; score[1] = 0;
+   norm = (float *)calloc(sizeof(float), vocab_size);
+   word_vec = (float *)calloc(sizeof(float), embed_size);
+   candidate = (float *)calloc(sizeof(float), top);
+
+   for(i = 0; i < vocab_size ; i++) 
+   {
+      for (layer= 0; layer < embed_size; layer ++) norm[i] += Weight_emb[i * embed_size + layer] * Weight_emb[i * embed_size + layer];
+      norm[i] = sqrt(norm[i]);
+   }
+   for(i = 0 ; i < vocab_size; i++) for(layer = 0; layer < embed_size; layer ++) Weight_emb[i * embed_size + layer] /= norm[i];
+
+   FILE* fp;
+   fp = fopen("./questions-words.txt", "r");
+
+   lines = 0;
+   while(1)
+      {
+         lines ++;
+         if (lines > 8875) sort = 1;
+         if (feof(fp)) 
+            {
+                cout << "Hello world" << endl; 
+                break;
+            }
+            //Sentence(array) 만들기
+         while (1)
+            {
+               if (feof(fp)) break;
+               //이미 해쉬 Table 써서 찾아온 index
+               word = ReadWordIndex(fp);
+               
+               if (word == -1) sentence[0] = -1;
+               //문장이 끝나면 break
+               if (word == 0) break;
+               //파일이 끝나도 break
+               //if (!strcmp(vocab[word].word, ":")) break;
+               
+               sentence[sen_len] = word;
+               sen_len++;
+               if (sen_len > 4) break;
+            }
+
+
+         if (strcmp(vocab[sentence[0]].word, ":") | sentence[0] == -1) continue;
+
+         for(layer = 0 ; layer < embed_size ; layer ++) word_vec[layer] = 0;
+         //sentence = [w1, w2, w3 ,w4]
+         //w2 + w3 - w1 == w4?
+         for (i = 1 ; i < 3 ; i++) for (layer =0; layer < embed_size; layer++) word_vec[layer] += Weight_emb[sentence[i] * embed_size + layer];
+         for (layer = 0; layer < embed_size ; layer ++) word_vec[layer] -= Weight_emb[sentence[0] * embed_size + layer];
+
+         cos_similarity(word_vec, candidate, top);
+
+         for(i = 0; i < top; i++) if(sentence[3] == candidate[i]) {score[sort]++; break;}
+      }
+
 }
 
 void save_all()
@@ -599,14 +700,15 @@ void save_all()
     if (fp)
     {
         
-        //fwrite(&vocab_size, sizeof(long long), 1, fp);
-        
-        for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fwrite(Weight_emb, sizeof(float), 1, fp);
-        
-        //for (int i = 0; i < vocab_size; i++) fwrite(vocab, sizeof(struct vocab_word), 1, fp);
-
-        //for (int i = 0; i < vocab_hash_size; i++) fwrite(vocab_hash, sizeof(int), 1, fp);
-        fclose(fp);
+      fwrite(&vocab_size, sizeof(long long), 1, fp);
+      //fwrite(&vocab_hash_size, sizeof(int) , 1, fp);
+      //for (int i = 0; i < vocab_size; i++) for (int layer = 0; layer < embed_size; layer++) fwrite(Weight_emb, sizeof(float), 1, fp);
+      fwrite(Weight_emb, sizeof(float) * vocab_size* embed_size, 1, fp);
+      //for (int i = 0; i < vocab_size; i++) fwrite(vocab, sizeof(struct vocab_word), 1, fp);
+      fwrite(vocab, sizeof(struct vocab_word) * vocab_size, 1, fp);
+      fwrite(vocab_hash, sizeof(int) * vocab_hash_size, 1, fp);
+      //for (int i = 0; i < vocab_hash_size; i++) fwrite(vocab_hash, sizeof(int), 1, fp);
+      fclose(fp);
         
     }
 
@@ -620,43 +722,43 @@ void save_all()
 
 int main()
 {
-    int temp;
-    char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
+   int temp;
+   int score[2];
+   char path[100] = "./1-billion-word/training-monolingual.tokenized.shuffled/";
+   expTable = (float*)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
+   for (int i = 0; i < EXP_TABLE_SIZE; i++)
+   {
+       //-MAX_EXP ~ MAX_EXP 까지 resolution개
+       expTable[i] = exp((i / float(EXP_TABLE_SIZE) * 2 - 1) * MAX_EXP);
+       expTable[i] = expTable[i] / (expTable[i] + 1);
+   }
 
-    expTable = (float*)malloc(sizeof(float) * (EXP_TABLE_SIZE + 1));
-    for (int i = 0; i < EXP_TABLE_SIZE; i++)
-    {
-        //-MAX_EXP ~ MAX_EXP 까지 resolution개
-        expTable[i] = exp((i / float(EXP_TABLE_SIZE) * 2 - 1) * MAX_EXP);
-        expTable[i] = expTable[i] / (expTable[i] + 1);
-    }
-
-    GetfileList(file_path, path);
-
-    vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
-    vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
-
-    Make_Large_Corpus(file_path);
-
-    //Initialize weight
-    Init_Net();
-
-    int* cap;
-    cap = (int*)malloc(sizeof(int) * num_thread);
-    for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
-
-    HANDLE* pt = (HANDLE*)malloc(num_thread * sizeof(HANDLE));
-    for (int i = 0; i < num_thread; i++) {
-        pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &cap[i], 0, NULL);
-    }
-    WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
-    for (int i = 0; i < num_thread; i++) {
-        CloseHandle(pt[i]);
-    }
-    free(pt);
-    free(cap);
-
+   GetfileList(file_path, path);
+   vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
+   vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
+   Make_Large_Corpus(file_path);
+   //Initialize weight
+   Init_Net();
+   
+   int* cap;
+   cap = (int*)malloc(sizeof(int) * num_thread);
+   for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
+   HANDLE* pt = (HANDLE*)malloc(num_thread * sizeof(HANDLE));
+   for (int i = 0; i < num_thread; i++) {
+       pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &cap[i], 0, NULL);
+   }
+   WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
+   for (int i = 0; i < num_thread; i++) {
+       CloseHandle(pt[i]);
+   }
+   free(pt);
+   free(cap);
+   Word_score(score);
+   for (int i =0; i <2 ;i ++)
+   {
+      cout << score[i] << endl;
+   }
     //Train(file_path, epoch, lr, sub_sampling);
-    save_all();
-
+   save_all();
+   load();
 }

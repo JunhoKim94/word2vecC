@@ -2,6 +2,7 @@
     "files.associations": {
         "io.h": "c",
         "conio.h": "c",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "*.tcc": "cpp"
     }
 }
