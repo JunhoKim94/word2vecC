@@ -21,7 +21,7 @@ struct vocab_word {
     char* word, * direction_path, path_len;
 };
 
-const int vocab_hash_size = 30000000;
+const int vocab_hash_size = 3000000;
 #define MAX_SEN 1000
 #define MAX_WORD_LEN 100
 #define MAX_CODE_LEN 40
@@ -36,7 +36,7 @@ int* vocab_hash;
 clock_t start;
 int num_thread = 1;
 char file_path[100][100];
-int num = 1;
+int num = 10;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -433,7 +433,7 @@ void* Trainthread(int id)
     //float *HS_grad = (float *)calloc(embed_size, sizeof(float));
     float f, g, loss;
     int pie;
-    cout << id  << endl;
+    cout <<  id  << endl;
     pie = num / num_thread;
     if (pie % num_thread != 0)
     {
@@ -577,7 +577,7 @@ void load()
     FILE* fs;
     float* px;
 
-    if (fopen_s(&fs, "./model_voc_hash.txt", "rb") != 0)
+    if (fopen_s(&fs, "./weight_voc_hash.txt", "rb") != 0)
     {
         printf("Cannot Open file \n");
         exit(1);
@@ -626,7 +626,7 @@ void cos_similarity(float *word_vec, float *candidate, int top = 5)
 
 void Word_score(int *score)
 {
-   int lines, sen_len, word, layer, i, sort = 0;
+   int lines, sen_len = 0, word, layer, i, sort = 0;
    int sentence[4];
    float *word_vec;
    float *norm;
@@ -651,33 +651,34 @@ void Word_score(int *score)
    lines = 0;
    while(1)
       {
+         sen_len = 0;
          lines ++;
          if (lines > 8875) sort = 1;
+         if (lines % 1000 == 0) cout << "Scoring " << lines << "th complete" << endl;
          if (feof(fp)) 
             {
                 cout << "Hello world" << endl; 
                 break;
             }
             //Sentence(array) 만들기
-         while (1)
+         if(sen_len == 0) while (1)
             {
                if (feof(fp)) break;
                //이미 해쉬 Table 써서 찾아온 index
                word = ReadWordIndex(fp);
-               
-               if (word == -1) sentence[0] = -1;
                //문장이 끝나면 break
                if (word == 0) break;
                //파일이 끝나도 break
                //if (!strcmp(vocab[word].word, ":")) break;
                
                sentence[sen_len] = word;
+               if (word == -1) {sentence[0] = -1; continue;}
                sen_len++;
                if (sen_len > 4) break;
             }
 
-
-         if (strcmp(vocab[sentence[0]].word, ":") | sentence[0] == -1) continue;
+         if (sentence[0] == -1) continue;
+         if (strcmp(vocab[sentence[0]].word, ":")) continue;
 
          for(layer = 0 ; layer < embed_size ; layer ++) word_vec[layer] = 0;
          //sentence = [w1, w2, w3 ,w4]
@@ -686,9 +687,14 @@ void Word_score(int *score)
          for (layer = 0; layer < embed_size ; layer ++) word_vec[layer] -= Weight_emb[sentence[0] * embed_size + layer];
 
          cos_similarity(word_vec, candidate, top);
-
          for(i = 0; i < top; i++) if(sentence[3] == candidate[i]) {score[sort]++; break;}
+         
       }
+
+   fclose(fp);
+   free(word_vec);
+   free(norm);
+   free(candidate);
 
 }
 
@@ -740,6 +746,7 @@ int main()
    //Initialize weight
    Init_Net();
    
+
    int* cap;
    cap = (int*)malloc(sizeof(int) * num_thread);
    for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
@@ -751,8 +758,10 @@ int main()
    for (int i = 0; i < num_thread; i++) {
        CloseHandle(pt[i]);
    }
+
    free(pt);
    free(cap);
+   
    Word_score(score);
    for (int i =0; i <2 ;i ++)
    {
@@ -761,4 +770,7 @@ int main()
     //Train(file_path, epoch, lr, sub_sampling);
    save_all();
    load();
+
+   //free(Weight_emb);
+   //free(HS_Weight);
 }
