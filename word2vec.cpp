@@ -34,9 +34,9 @@ long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 3;
+int num_thread = 1;
 char file_path[100][100];
-int num = 99;
+int num = 1;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
@@ -443,7 +443,7 @@ void *Trainthread(int id)
    //Train file list
    start = clock();
    iteration = 0;
-   for(int i = 0 ; i < epoch ; i ++ ) for (int path = (id - 1) * pie ; path < (id - 1) * (pie + 1) ; path++)
+   for(int i = 0 ; i < epoch ; i ++ ) for (int path = (id - 1) * pie ; path < id * pie ; path++)
    {
       FILE* fp;
       printf("%d file start training\n", path);
@@ -580,7 +580,7 @@ void cos_similarity(float *word_vec, float *candidate, int top = 5)
 
 
    similarity = (float *)calloc(sizeof(float), vocab_size);
-   for (i = 0; i < vocab_size ; i++) for (layer = 0; layer < embed_size ; layer ++); similarity[i] += Weight_emb[i][layer] * word_vec[layer];
+   for (i = 0; i < vocab_size ; i++) for (layer = 0; layer < embed_size ; layer ++) similarity[i] += Weight_emb[i][layer] * word_vec[layer];
    qsort(similarity, vocab_size ,sizeof(float), val);
 
    for (i = 0; i < top ; i++) candidate[i] = similarity[i];
@@ -666,7 +666,7 @@ void load()
    FILE *fs;
    float **px;
 
-   if (fopen_s(&fs, "./model_weight.txt", "rb") != 0) 
+   if (fopen_s(&fs, "./weight_voc_hash.txt", "rb") != 0) 
    {
       printf("Cannot Open file \n");
       exit(1);
@@ -683,7 +683,7 @@ void load()
 void save_all()
 {
    FILE *fp;
-   fopen_s(&fp, "model_weight.txt","wb");
+   fopen_s(&fp, "weight_voc_hash.txt","wb");
    if(fp)
    {
       fwrite(&vocab_size, sizeof(long long), 1, fp);

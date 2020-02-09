@@ -12,6 +12,7 @@
             "command": "g++",
             "args": [
                 "${file}",
+                "-g",
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}"
             ],
@@ -36,6 +37,7 @@
             "command": "gcc",
             "args": [
                 "${file}",
+                "-g",
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}"
             ],
