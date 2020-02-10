@@ -571,6 +571,79 @@ unsigned int WINAPI TrainModelThread_win(void* tid) {
     return 0;
 }
 
+void Word_score(int *score)
+{
+   int lines, sen_len = 0, word, layer, i, sort = 0;
+   int sentence[4];
+   float *word_vec;
+   float *norm;
+   float *candidate;
+   int top = 5;
+
+   score[0] = 0; score[1] = 0;
+   norm = (float *)calloc(sizeof(float), vocab_size);
+   word_vec = (float *)calloc(sizeof(float), embed_size);
+   candidate = (float *)calloc(sizeof(float), top);
+
+   for(i = 0; i < vocab_size ; i++) 
+   {
+      for (layer= 0; layer < embed_size; layer ++) norm[i] += Weight_emb[i][layer] * Weight_emb[i][layer];
+      norm[i] = sqrt(norm[i]);
+   }
+   for(i = 0 ; i < vocab_size; i++) for(layer = 0; layer < embed_size; layer ++) Weight_emb[i][layer] /= norm[i];
+
+   FILE* fp;
+   fp = fopen("./questions-words.txt", "r");
+
+   lines = 0;
+   while(1)
+      {
+         sen_len = 0;
+         lines ++;
+         if (lines > 8875) sort = 1;
+         if (lines % 1000 == 0) cout << "Scoring " << lines << "th complete" << endl;
+         if (feof(fp)) 
+            {
+                cout << "Hello world" << endl; 
+                break;
+            }
+            //Sentence(array) 만들기
+         if(sen_len == 0) while (1)
+            {
+               if (feof(fp)) break;
+               //이미 해쉬 Table 써서 찾아온 index
+               word = ReadWordIndex(fp);
+               //문장이 끝나면 break
+               if (word == 0) break;
+               //파일이 끝나도 break
+               //if (!strcmp(vocab[word].word, ":")) break;
+               
+               sentence[sen_len] = word;
+               if (word == -1) {sentence[0] = -1; continue;}
+               sen_len++;
+               if (sen_len > 4) break;
+            }
+
+         if (sentence[0] == -1) continue;
+         if (strcmp(vocab[sentence[0]].word, ":")) continue;
+
+         for(layer = 0 ; layer < embed_size ; layer ++) word_vec[layer] = 0;
+         //sentence = [w1, w2, w3 ,w4]
+         //w2 + w3 - w1 == w4?
+         for (i = 1 ; i < 3 ; i++) for (layer =0; layer < embed_size; layer++) word_vec[layer] += Weight_emb[sentence[i]][layer];
+         for (layer = 0; layer < embed_size ; layer ++) word_vec[layer] -= Weight_emb[sentence[0]][layer];
+
+         cos_similarity(word_vec, candidate, top);
+         for(i = 0; i < top; i++) if(sentence[3] == candidate[i]) {score[sort]++; break;}
+         
+      }
+
+   fclose(fp);
+   free(word_vec);
+   free(norm);
+   free(candidate);
+
+}
 
 void load()
 {
@@ -723,8 +796,6 @@ void save_all()
         printf("데이터 저장 실패\n");
     }
 }
-
-
 
 int main()
 {
