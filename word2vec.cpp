@@ -36,7 +36,7 @@ int* vocab_hash;
 clock_t start;
 int num_thread = 1;
 char file_path[100][100];
-int num = 10;
+int num = 99;
 int epoch = 1;
 float lr = 0.0025;
 float sub_sampling = 0.00001;
