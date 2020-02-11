@@ -26,18 +26,18 @@ const int vocab_hash_size = 3000000;
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 
-int min_freq = 3;
+int min_freq = 5;
 int skip = 5, negative_sampling = 5, embed_size = 300;
 long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
 struct vocab_word* vocab;
 int* vocab_hash;
 clock_t start;
-int num_thread = 3;
+int num_thread = 4;
 char file_path[100][100];
-int num = 33;
+int num = 100;
 int epoch = 1;
 float lr = 0.0025;
-float sub_sampling = 0.00001;
+float sub_sampling = 0.0001;
 
 float* Weight_emb, * HS_Weight, * Nega_emb, * expTable;
 
@@ -54,20 +54,20 @@ void ReadWord(char* word, FILE* fp)
         //뺄거 더 없나 봐야댐
         if ((ch == ' ') || (ch == '\t') || (ch == '\n') || (ch == '-'))
         {
-            /*
+            if (ch == 13) continue;
             if (i > 0)
             {
                if (ch == '\n') ungetc(ch,fp);
                break;
             }
-            */
+            
             if (ch == '\n')
             {
                 //문장 구분을 위한 추가
                 strcpy(word, (char*)"</s>");
                 return;
             }
-            break;
+            else continue;
         }
         word[i] = ch;
         i++;
@@ -136,7 +136,7 @@ void Addword2vocab(char* word)
     vocab_hash[hash] = vocab_size - 1;
 
 }
-
+/*
 int f(const void* a, const void* b)
 {
     // -> 포인터 . value
@@ -147,6 +147,11 @@ int f(const void* a, const void* b)
     if (test1->freq > test2->freq) return -1;
     return 0;
 }
+*/
+int VocabCompare(const void* a, const void* b) {
+    return ((struct vocab_word*)b)->freq - ((struct vocab_word*)a)->freq;
+}
+
 //to save memory Reduce vocab which have low freq
 void Reducevocab()
 {
@@ -178,7 +183,7 @@ void SortVocab()
     unsigned int hash;
     //Huffman 사용하기 전 Vocab Sort 함수 & freq <min 이하는 제거
     //"UNK" 빼고 나머지 내림차순
-    qsort(&vocab[1], vocab_size - 1, sizeof(struct vocab_word), f);
+    qsort(&vocab[1], vocab_size - 1, sizeof(struct vocab_word), VocabCompare);
     for (i = 0; i < vocab_hash_size; i++) vocab_hash[i] = -1;
 
     size = vocab_size;
@@ -343,8 +348,9 @@ void Make_Large_Corpus(char file_path[][100])
     {
         vocab_hash[i] = -1;
     }
-    Addword2vocab((char*)"</s>");
     vocab_size = 0;
+    Addword2vocab((char*)"</s>");
+    
     for (int path = 0; path < num; path++)
     {
         FILE* fp;
@@ -470,6 +476,7 @@ void* Trainthread(int id)
                 if (feof(fp)) break;
                 //이미 해쉬 Table 써서 찾아온 index
                 word = ReadWordIndex(fp);
+                //모르는 단어는("UNK" 넘겨버리기)
                 if (word == -1) continue;
                 //문장이 끝나면 break
                 if (word == 0) break;
@@ -513,7 +520,11 @@ void* Trainthread(int id)
                     for (int layer = 0; layer < embed_size; layer++) f += Weight_emb[train_word * embed_size + layer] * HS_Weight[idx * embed_size + layer];
                     //sigmoid  --> Table로 변환하면 가속화
                     //f = (float)1 / (float)(1 + exp(-f));
-                    if (f >= MAX_EXP || f <= -MAX_EXP) continue;
+                    //gradient clipping 추가
+                    if (f >= MAX_EXP || f <= -MAX_EXP) { 
+                        f *= (float)MAX_EXP / abs(f); 
+                        f = expTable[(int)(f / 2 / MAX_EXP * EXP_TABLE_SIZE + EXP_TABLE_SIZE / 2)];
+                    }
                     else f = expTable[(int)(f / 2 / MAX_EXP * EXP_TABLE_SIZE + EXP_TABLE_SIZE / 2)];
 
                     loss += f;
@@ -571,9 +582,6 @@ unsigned int WINAPI TrainModelThread_win(void* tid) {
     return 0;
 }
 
-
-
-
 int val(const void* a, const void* b)
 {
     // -> 포인터 . value
@@ -599,13 +607,13 @@ int *argmax(float* a, int size, int top = 5)
             if (a[i] > max) { max = a[i]; temp = i; }
             else continue;
         }
-
+        cout << max << endl;
         arg[j] = temp;
         a[temp] = 0;
     }
     return arg;
 }
-void cos_similarity(float* word_vec, float* candidate, int top = 5)
+int * cos_similarity(float* word_vec, int top = 5)
 {
     float* similarity;
     int i, layer;
@@ -619,8 +627,9 @@ void cos_similarity(float* word_vec, float* candidate, int top = 5)
     similarity = (float*)calloc(sizeof(float), vocab_size);
     for (i = 0; i < vocab_size; i++) for (layer = 0; layer < embed_size; layer++) similarity[i] += Weight_emb[i * embed_size + layer] * word_vec[layer];
     int* arg = argmax(similarity, vocab_size);
-
-    for (i = 0; i < top; i++) candidate[i] = arg[i];
+    free(similarity);
+    return arg;
+    //for (i = 0; i < top; i++) candidate[i] = arg[i];
 
 }
 
@@ -630,12 +639,10 @@ void Word_score(int* score, int top = 5)
     int sentence[4];
     float* word_vec;
     float* norm;
-    float* candidate;
 
     score[0] = 0; score[1] = 0;
     norm = (float*)calloc(sizeof(float), vocab_size);
     word_vec = (float*)calloc(sizeof(float), embed_size);
-    candidate = (float*)calloc(sizeof(float), top);
 
     for (i = 0; i < vocab_size; i++)
     {
@@ -646,14 +653,16 @@ void Word_score(int* score, int top = 5)
 
     FILE* fp;
     fp = fopen("./questions-words.txt", "r");
-
+    cout << vocab[0].word << endl;
     lines = 0;
     while (1)
     {
         sen_len = 0;
         lines++;
-        if (lines > 8875) sort = 1;
-        if (lines % 1000 == 0) cout << "Scoring " << lines << "th complete" << endl;
+        if (lines > 8869 * 2) sort = 1;
+        if (lines % 1000 == 0) {
+            cout << "Scoring " << lines << "th complete" << endl; cout << sentence[sen_len] << endl;
+        }
         if (feof(fp))
         {
             cout << "Hello world" << endl;
@@ -665,6 +674,7 @@ void Word_score(int* score, int top = 5)
             if (feof(fp)) break;
             //이미 해쉬 Table 써서 찾아온 index
             word = ReadWordIndex(fp);
+            //if (strcmp(vocab[word].word, ":") == 0) { cout << 1 << endl;  break; }
             //문장이 끝나면 break
             if (word == -1) continue;
             if (word == 0) break;
@@ -673,11 +683,13 @@ void Word_score(int* score, int top = 5)
 
             sentence[sen_len] = word;
             sen_len++;
-            if (sen_len > 4) break;
+            if (sen_len >= 4) break;
         }
-
+        
+        //for (int i = 0; i < sen_len; i++) cout << vocab[sentence[i]].word << "  " << sentence[i] << "  ";
+        //cout << sen_len << endl;
         if (sen_len != 4) continue;
-        if (strcmp(vocab[sentence[0]].word, ":") == 0) continue;
+        if (sentence[0] == -1 || sentence[1] == -1 || sentence[2] == -1 || sentence[3] == -1) continue;
 
         for (layer = 0; layer < embed_size; layer++) word_vec[layer] = 0;
         //sentence = [w1, w2, w3 ,w4]
@@ -685,17 +697,55 @@ void Word_score(int* score, int top = 5)
         for (i = 1; i < 3; i++) for (layer = 0; layer < embed_size; layer++) word_vec[layer] += Weight_emb[sentence[i] * embed_size + layer];
         for (layer = 0; layer < embed_size; layer++) word_vec[layer] -= Weight_emb[sentence[0] * embed_size + layer];
 
-        cos_similarity(word_vec, candidate, top);
-        for (i = 0; i < top; i++) if (sentence[3] == candidate[i]) { score[sort]++; break; }
+        int *candidate = cos_similarity(word_vec, top);
+        for (i = 0; i < top; i++) { 
+            if (lines % 100 == 0) cout << "target word  " << vocab[sentence[3]].word << "  candidate word  " <<   vocab[candidate[i]].word <<  "    "   << endl;
+            if (sentence[3] == candidate[i]) { score[sort]++; cout << "cong" << endl;  break; }
+        }
+        free(candidate);
 
     }
 
     fclose(fp);
     free(word_vec);
     free(norm);
-    free(candidate);
 
 }
+void see_word()
+{
+    int lines, sen_len = 0, word, layer, i, sort = 0;
+    int sentence[4];
+    float* word_vec;
+    float* norm;
+    norm = (float*)calloc(sizeof(float), vocab_size);
+    word_vec = (float*)calloc(sizeof(float), embed_size);
+
+    for (i = 0; i < vocab_size; i++)
+    {
+        for (layer = 0; layer < embed_size; layer++) norm[i] += Weight_emb[i * embed_size + layer] * Weight_emb[i * embed_size + layer];
+        norm[i] = sqrt(norm[i]);
+    }
+
+        for (layer = 0; layer < embed_size; layer++) Weight_emb[i * embed_size + layer] /= norm[i];
+
+
+        for (int j = 1000; j < 1010; j++)
+
+        {
+        for (layer = 0; layer < embed_size; layer++) word_vec[layer] = 0;
+        for (layer = 0; layer < embed_size; layer++) word_vec[layer] = Weight_emb[j * embed_size + layer];
+
+
+        //sentence = [w1, w2, w3 ,w4]
+        //w2 + w3 - w1 == w4?
+        //for (i = 1; i < 3; i++) for (layer = 0; layer < embed_size; layer++) word_vec[layer] += Weight_emb[sentence[i] * embed_size + layer];
+        //for (layer = 0; layer < embed_size; layer++) word_vec[layer] -= Weight_emb[sentence[0] * embed_size + layer];
+
+        int* candidate = cos_similarity(word_vec, 5);
+        for (int i = 0; i < 5; i++) cout << "target word  " << vocab[j].word << "  candidate word  " << vocab[candidate[i]].word << "    " << endl;
+    }
+}
+
 
 void save_all()
 {
@@ -768,9 +818,7 @@ int main()
     Make_Large_Corpus(file_path);
     //Initialize weight
     Init_Net();
-    //save_all();
     //load();
-    //for (int i = 10000; i < 10003; i++) for (int j = 0; j < 15; j++) cout << Weight_emb[i * embed_size + j] << endl;
     
     
     int* cap;
@@ -787,13 +835,12 @@ int main()
 
     free(pt);
     free(cap);
+    
     save_all();
     
     //cout << "" << endl;
-    //load();
-
-
-
+    
+    see_word();
     
     Word_score(score);
     for (int i = 0; i < 2; i++)
