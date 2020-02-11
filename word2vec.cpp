@@ -512,8 +512,8 @@ void *Trainthread(int id)
                g = (1 - f - (float)vocab[word].direction_path[j]) * lr;
                //printf("%lf\n",g);
                //backpropagate
-               for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[word][layer];
-               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[word][layer] += g * Weight_emb[train_word][layer];
+               for (int layer = 0 ; layer < embed_size ; layer ++) hidden[layer] += g * HS_Weight[idx][layer];
+               for (int layer = 0 ; layer < embed_size; layer++) HS_Weight[idx][layer] += g * Weight_emb[train_word][layer];
             }
 
             for (int layer = 0 ; layer < embed_size ; layer++) 
@@ -525,7 +525,7 @@ void *Trainthread(int id)
 
          sen_pos ++;
 
-         if (iteration % 300000 == 0)
+         if (iteration % 100 == 0)
          {
                
                now = clock();
