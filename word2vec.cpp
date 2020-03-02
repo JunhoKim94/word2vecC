@@ -19,11 +19,12 @@ struct vocab_word {
     char* word, * direction_path, path_len;
 };
 
-struct n_gram {
-    char* ch;
+struct char_word{
+    char * word;
 };
 
 const int vocab_hash_size = 3000000;
+const int ch_hash_size = 100000;
 #define MAX_SEN 1000
 #define MAX_WORD_LEN 100
 #define MAX_CODE_LEN 40
@@ -343,7 +344,39 @@ void Huffman()
     free(parent_node);
 
 }
+int sub_word_Hash(char *ch, size_t numByte)
+{
+    uint32_t Prime = 0x01000193;
+    uint32_t hash = 0x811C9DC5;
 
+    const unsigned char* ptr = (const unsigned char*)ch;
+    while(numByte--) {hash = (*ptr++ ^ hash) * Prime;}
+    return hash;
+}
+int ch2idx(char *ch)
+{
+    //word가 vocab 과 vocab_hash에 존재하는지 return 하는 함수
+    unsigned int hash = sub_word_Hash(ch, 3);
+    while (1)
+    {
+        if (vocab_hash[hash] == -1) break;
+        if (!strcmp(ch[vocab_hash[hash]].word, word)) return vocab_hash[hash];
+        hash = (hash + 1) % vocab_hash_size;
+    }
+    return -1;
+}
+void subword_corpus(char *word)
+{
+    int n_gram = 3;
+    strcpy("<", word);
+    strcpy(word, ">");
+
+    if (strlen(word) > n_gram) for (int i = 0; i < strlen(word) - n_gram; i++)
+    {
+        char temp[3];
+        for (int j = 0; j < n_gram ; j++) temp[j] = word[i + j];
+    }
+}
 
 //vocab에 freq, path, word, id들 계산 --> path = Huffman // word == ReadWordID, id // freq
 void Make_corpus(FILE* fp)
