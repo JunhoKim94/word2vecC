@@ -19,6 +19,10 @@ struct vocab_word {
     char* word, * direction_path, path_len;
 };
 
+struct n_gram {
+    char* ch;
+};
+
 const int vocab_hash_size = 3000000;
 #define MAX_SEN 1000
 #define MAX_WORD_LEN 100
