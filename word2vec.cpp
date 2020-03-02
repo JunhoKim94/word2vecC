@@ -34,9 +34,10 @@ const int ch_hash_size = 100000;
 
 int min_freq = 5, win_var = 1, lr_decay = 0, verbose = 1, grad_clip = 0;
 int skip = 5, negative_sampling = 5, embed_size = 300, hs = 1;
-long long vocab_size = 0, vocab_max_size = 1000, train_words = 0;
+long long vocab_size = 0, vocab_max_size = 1000, train_words = 0, ch_size = 0;
 struct vocab_word* vocab;
-int* vocab_hash;
+struct char_word* sub;
+int *vocab_hash, *ch_hash;
 clock_t start;
 int num_thread = 4;
 char file_path[100][100];
@@ -44,7 +45,7 @@ int num = 100;
 int epoch = 1;
 float lr = 0.025;
 float sub_sampling = 0.01;
-
+int n_gram = 3;
 float* Weight_emb, * HS_Weight, * NS_Weight, * expTable;
 
 const int table_size = 1e8;
@@ -72,7 +73,6 @@ void unigram_table()
     }
 
 }
-
 
 void ReadWord(char* word, FILE* fp)
 {
@@ -170,18 +170,7 @@ int Addword2vocab(char* word)
     vocab_hash[hash] = vocab_size - 1;
     return vocab_size - 1;
 }
-/*
-int f(const void* a, const void* b)
-{
-    // -> 포인터 . value
-    struct vocab_word* test1 = (struct vocab_word*)a;
-    struct vocab_word* test2 = (struct vocab_word*)b;
 
-    if (test1->freq < test2->freq) return 1;
-    if (test1->freq > test2->freq) return -1;
-    return 0;
-}
-*/
 int VocabCompare(const void* a, const void* b) {
     return ((struct vocab_word*)b)->freq - ((struct vocab_word*)a)->freq;
 }
@@ -208,7 +197,6 @@ void Reducevocab()
     }
 
     printf("Reduce Word is Complete  |  Current Vocab_size = %ld \n", vocab_size);
-
 }
 
 void SortVocab()
@@ -250,7 +238,6 @@ void SortVocab()
     printf("final vocab size :: %lld \n", vocab_size);
 
 }
-
 
 void Huffman()
 {
@@ -342,8 +329,29 @@ void Huffman()
     free(count);
     free(binary);
     free(parent_node);
-
 }
+
+int Add_sub(char *ch)
+{
+    //printf("%s  ", word);
+    //word가 처음 들어왔을 때 vocab과 vocab_hash에 저장하는 함수
+    unsigned int hash;
+
+    //메모리가 해제되었는데 접근한 경우 segmentation fault
+    sub[ch_size].word = (char*)calloc(n_gram, sizeof(char));
+
+    //해당 메모리에 복사
+    strcpy(sub[ch_size].word, ch);
+
+    ch_size++;
+
+    hash = sub_word_Hash(ch, 0);
+    while (ch_hash[hash] != -1) hash = (hash + 1) % ch_hash_size;
+
+    ch_hash[hash] = ch_size - 1;
+    return ch_size - 1;
+}
+
 int sub_word_Hash(char *ch, size_t numByte)
 {
     uint32_t Prime = 0x01000193;
@@ -353,28 +361,34 @@ int sub_word_Hash(char *ch, size_t numByte)
     while(numByte--) {hash = (*ptr++ ^ hash) * Prime;}
     return hash;
 }
+
 int ch2idx(char *ch)
 {
     //word가 vocab 과 vocab_hash에 존재하는지 return 하는 함수
     unsigned int hash = sub_word_Hash(ch, 3);
     while (1)
     {
-        if (vocab_hash[hash] == -1) break;
-        if (!strcmp(ch[vocab_hash[hash]].word, word)) return vocab_hash[hash];
-        hash = (hash + 1) % vocab_hash_size;
+        if (ch_hash[hash] == -1) break;
+        if (!strcmp(sub[ch_hash[hash]].word, ch)) return ch_hash[hash];
+        hash = (hash + 1) % ch_hash_size;
     }
     return -1;
 }
+
 void subword_corpus(char *word)
 {
-    int n_gram = 3;
-    strcpy("<", word);
-    strcpy(word, ">");
+    char temp[100];
+    long long idx;
+    temp[0] = '<';
+    strcpy(temp, word);
+    strcpy(temp, ">");
 
-    if (strlen(word) > n_gram) for (int i = 0; i < strlen(word) - n_gram; i++)
+    if (strlen(word) > n_gram) for (int i = 0; i < strlen(temp) - n_gram; i++)
     {
-        char temp[3];
-        for (int j = 0; j < n_gram ; j++) temp[j] = word[i + j];
+        char sub_word[3];
+        for (int j = 0; j < n_gram ; j++) sub_word[j] = temp[i + j];
+        idx = ch2idx(sub_word);
+        if (idx == -1) Add_sub(sub_word);
     }
 }
 
@@ -398,11 +412,11 @@ void Make_corpus(FILE* fp)
         if (idx == -1)
         {
             Addword2vocab(word);
+            subword_corpus(word);
         }
         else vocab[idx].freq++;
 
         if (vocab_size > vocab_hash_size * 0.7) continue;
-
     }
     printf("train_words ::  %lld \n", train_words);
 
@@ -494,8 +508,6 @@ void Init_Net()
     {
         NS_Weight[i*embed_size + j] = 0;
     }
-
-
 
 }
 
@@ -727,7 +739,7 @@ int *argmax(float* a, int size, int top = 5)
         int temp = 0;
         for (int i = 0; i < size; i++)
         {
-            if (a[i] > max) { max = a[i]; temp = i; }
+            if (a[i] > max) {max = a[i]; temp = i; }
             else continue;
         }
         //cout << max << endl;
@@ -912,11 +924,9 @@ void save_all(char *path)
 
     if (fp)
     {
-
         fwrite(&vocab_size, sizeof(long long), 1, fp);
         fwrite(Weight_emb, sizeof(float) * vocab_size * embed_size, 1, fp);
         fclose(fp);
-
     }
 
     else
@@ -942,8 +952,6 @@ void load(char *path)
 
     fclose(fs);
 }
-
-
 
 int main()
 {
