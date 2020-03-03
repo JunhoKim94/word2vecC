@@ -16,7 +16,7 @@ using namespace std;
 struct vocab_word {
     long long freq;
     int* point;
-    char* word, * direction_path, path_len;
+    char* word, *direction_path, path_len;
 };
 
 struct char_word{
@@ -46,7 +46,7 @@ int epoch = 1;
 float lr = 0.025;
 float sub_sampling = 0.01;
 int n_gram = 3;
-float* Weight_emb, * HS_Weight, * NS_Weight, * expTable;
+float *Weight_emb, *HS_Weight, *NS_Weight, *expTable;
 
 const int table_size = 1e8;
 int *uni_table;
@@ -171,7 +171,8 @@ int Addword2vocab(char* word)
     return vocab_size - 1;
 }
 
-int VocabCompare(const void* a, const void* b) {
+int VocabCompare(const void* a, const void* b) 
+{
     return ((struct vocab_word*)b)->freq - ((struct vocab_word*)a)->freq;
 }
 
@@ -187,7 +188,8 @@ void Reducevocab()
         b++;
     }
     else free(vocab[a].word);
-    vocab_size = b;
+
+    vocab_size = b; 
     for (a = 0; a < vocab_hash_size; a++) vocab_hash[a] = -1;
     for (a = 0; a < vocab_size; a++)
     {
