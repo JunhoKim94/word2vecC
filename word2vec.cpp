@@ -50,7 +50,7 @@ void unigram_table()
     int a, num;
     double total_p = 0, power = 0.75;
     double p;
-    uni_table = (int*)calloc(sizeof(int), table_size);
+    uni_table = (int*)calloc(table_size, sizeof(int));
     for (int a = 0; a < vocab_size; a++) total_p += pow(vocab[a].freq, power);
 
     num = 0;
@@ -710,7 +710,7 @@ int* cos_similarity(float* word_vec, int top = 5)
     for (layer = 0; layer < embed_size; layer++) word_vec[layer] /= norm;
 
 
-    similarity = (float*)calloc(sizeof(float), vocab_size);
+    similarity = (float*)calloc(vocab_size, sizeof(float));
     for (i = 0; i < vocab_size; i++) for (layer = 0; layer < embed_size; layer++) similarity[i] += Weight_emb[i * embed_size + layer] * word_vec[layer];
     int* arg = argmax(similarity, vocab_size);
     free(similarity);
@@ -731,7 +731,7 @@ void Save_vocab()
     fclose(fo);
 }
 
-void loadvocab()
+void loadvocab(char file_path[][100])
 {
     long long index;
     char c;
@@ -759,8 +759,8 @@ void Word_score(int* score, int top = 5)
     float* norm;
 
     score[0] = 0; score[1] = 0;
-    norm = (float*)calloc(sizeof(float), vocab_size);
-    word_vec = (float*)calloc(sizeof(float), embed_size);
+    norm = (float*)calloc(vocab_size, sizeof(float));
+    word_vec = (float*)calloc(embed_size, sizeof(float));
 
     for (i = 0; i < vocab_size; i++)
     {
@@ -838,8 +838,8 @@ void see_word()
     int sentence[4];
     float* word_vec;
     float* norm;
-    norm = (float*)calloc(sizeof(float), vocab_size);
-    word_vec = (float*)calloc(sizeof(float), embed_size);
+    norm = (float*)calloc(vocab_size, sizeof(float));
+    word_vec = (float*)calloc(embed_size, sizeof(float));
 
     for (i = 0; i < vocab_size; i++)
     {
@@ -925,9 +925,9 @@ int main()
     GetfileList(file_path, path);
     vocab_hash = (int*)malloc(sizeof(long) * vocab_hash_size);
     vocab = (struct vocab_word*)calloc(vocab_max_size, sizeof(struct vocab_word));
-    Make_Large_Corpus(file_path);
-    Save_vocab();
-    //loadvocab();
+    //Make_Large_Corpus(file_path);
+    //Save_vocab();
+    loadvocab(file_path);
     cout << train_words << endl;
     //Initialize weight
     Huffman();
