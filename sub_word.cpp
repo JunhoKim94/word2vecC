@@ -26,7 +26,8 @@ const int ch_hash_size = 1000000;
 struct vocab_word {
     long long freq;
     int* sub_word;
-    char* word, len = 0;
+    char* word; 
+    int len = 0;
 };
 
 struct char_word {
@@ -46,7 +47,7 @@ char file_path[100][100];
 int num = 100;
 int epoch = 1;
 float lr = 0.025;
-float sub_sampling = 0.01;
+float sub_sampling = 0.001;
 float* Weight_emb, * NS_Weight, * expTable, * ch_Weight;
 
 const int table_size = 1e8;
@@ -794,40 +795,6 @@ void Word_score(int* score, int top = 5)
 
 }
 
-void see_word()
-{
-    int lines, sen_len = 0, word, layer, i, sort = 0;
-    int sentence[4];
-    float* word_vec;
-    float* norm;
-    norm = (float*)calloc(vocab_size , sizeof(float));
-    word_vec = (float*)calloc(embed_size, sizeof(float));
-
-    for (i = 0; i < vocab_size; i++)
-    {
-        for (layer = 0; layer < embed_size; layer++) norm[i] += Weight_emb[i * embed_size + layer] * Weight_emb[i * embed_size + layer];
-        norm[i] = sqrt(norm[i]);
-    }
-
-    for (layer = 0; layer < embed_size; layer++) Weight_emb[i * embed_size + layer] /= norm[i];
-
-    for (int j = 1000; j < 1010; j++)
-
-    {
-        for (layer = 0; layer < embed_size; layer++) word_vec[layer] = 0;
-        for (layer = 0; layer < embed_size; layer++) word_vec[layer] = Weight_emb[j * embed_size + layer];
-
-
-        //sentence = [w1, w2, w3 ,w4]
-        //w2 + w3 - w1 == w4?
-        //for (i = 1; i < 3; i++) for (layer = 0; layer < embed_size; layer++) word_vec[layer] += Weight_emb[sentence[i] * embed_size + layer];
-        //for (layer = 0; layer < embed_size; layer++) word_vec[layer] -= Weight_emb[sentence[0] * embed_size + layer];
-
-        int* candidate = cos_similarity(word_vec, 5);
-        for (int i = 0; i < 5; i++) cout << "target word  " << vocab[j].word << "  candidate word  " << vocab[candidate[i]].word << "    " << endl;
-    }
-}
-
 void train()
 {
     int* cap;
@@ -844,10 +811,23 @@ void train()
 
     free(pt);
     free(cap);
-    //save_all(save_path);
-    //see_word();
 
 }
+
+//Vocab Weight from Subvocab
+void create_vocab_weight()
+{
+    float *vocab_vec;
+    vocab_vec = (float *)calloc(embed_size, sizeof(float));
+
+    for (int i = 0; i < vocab_size; i ++)
+    {
+        for (int j =0; j < vocab[i].len ; j++) for (int k = 0; k < embed_size; k++) vocab_vec[k] += ch_Weight[vocab[i].sub_word[j] * embed_size + k];
+        
+        for (int j = 0; j < embed_size ; j++) Weight_emb[i * embed_size + j] = vocab_vec[j];
+    }
+}
+
 
 int main()
 {
@@ -878,34 +858,20 @@ int main()
     //Save_vocab();
     loadvocab();
     cout << train_words << "  ch  " << ch_size << " ch_max " << ch_max_size << endl;
+    cout << vocab_size << endl;
     //Initialize weight
     Variable_();
     Init_Net();
     //load();
     unigram_table();
     
-    int* cap;
-    cap = (int*)malloc(sizeof(int) * num_thread);
-    for (int i = 0; i < num_thread; i++) cap[i] = i + 1;
-    HANDLE* pt = (HANDLE*)malloc(num_thread * sizeof(HANDLE));
-    for (int i = 0; i < num_thread; i++) {
-        pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, &cap[i], 0, NULL);
-    }
-    WaitForMultipleObjects(num_thread, pt, TRUE, INFINITE);
-    for (int i = 0; i < num_thread; i++) {
-        CloseHandle(pt[i]);
-    }
-
-    free(pt);
-    free(cap);
-    //save_all(save_path);
-    //see_word();
-
+    //train();
+    create_vocab_weight();
     Word_score(score);
     for (int i = 0; i < 2; i++) cout << score[i] << endl;
     FILE* fo = fopen("score.txt", "ab");
     fseek(fo, 0, SEEK_END);
-    fprintf(fo, "Devide by Window_size | HS-skip-gram | grad cliff %d | lr_decay %d | window_random = %d | skip_size = 5 | lr = %f | subsampling = %f | min_freq = %d | sem = %d  | syn = %d", grad_clip, lr_decay, win_var, lr, sub_sampling, min_freq, score[0], score[1]);
+    fprintf(fo, "Devide by Window_size | NS-skip-gram | grad cliff %d | lr_decay %d | window_random = %d | skip_size = 5 | lr = %f | subsampling = %f | min_freq = %d | sem = %d  | syn = %d", grad_clip, lr_decay, win_var, lr, sub_sampling, min_freq, score[0], score[1]);
     fprintf(fo, "\n");
 
     fclose(fo);
