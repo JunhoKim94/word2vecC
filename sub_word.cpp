@@ -47,7 +47,7 @@ char file_path[100][100];
 int num = 100;
 int epoch = 1;
 float lr = 0.025;
-float sub_sampling = 0.001;
+float sub_sampling = 0.01;
 float *Weight_emb, *NS_Weight, *expTable, *ch_Weight;
 short s = 2;
 const int table_size = 1e7;
@@ -542,10 +542,10 @@ void* Trainthread(int id)
                 //hidden layer(gradient) 초기화
                 loss = 0;
                 //cout << (int)vocab[word].len << endl;
-                for (int len = 0; i < vocab[train_word].len; i++)
+                for (int l = 0; l < vocab[train_word].len; l++)
                 {
                     int idx;
-                    idx = vocab[train_word].sub_word[len];
+                    idx = vocab[train_word].sub_word[l];
                     if (idx == -1) break;
                     for (int layer = 0; layer < embed_size; layer++) hidden[layer] += ch_Weight[embed_size * idx + layer];
                 }
